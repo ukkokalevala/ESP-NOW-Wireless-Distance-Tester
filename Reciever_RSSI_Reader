@@ -1,0 +1,93 @@
+#include <esp_now.h>
+#include <WiFi.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_ADDR 0x3C
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire);
+
+// ==== DATA STRUCT ====
+typedef struct {
+  int counter;
+} Packet;
+
+Packet data;
+
+// ==== RECEIVED CALLBACK ====
+void onReceive(const esp_now_recv_info_t *info, const uint8_t *incoming, int len) {
+  memcpy(&data, incoming, sizeof(data));
+  int rssi = info->rx_ctrl->rssi;
+
+  Serial.print("Packet #");
+  Serial.print(data.counter);
+  Serial.print(" | RSSI: ");
+  Serial.println(rssi);
+
+  // ---- OLED Update ----
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+
+  // Packet number
+  display.setCursor(0, 0);
+  display.print("Packet: ");
+  display.println(data.counter);
+
+  // RSSI value
+  display.setCursor(0, 12);
+  display.print("RSSI: ");
+  display.println(rssi);
+
+  // ---- SIGNAL BAR (0 to 100%) ----
+  int strength = map(rssi, -100, -40, 0, 100);
+  strength = constrain(strength, 0, 100);
+
+  display.setCursor(0, 24);
+  display.print("Signal: ");
+  display.print(strength);
+  display.println("%");
+
+  // Draw bar graph
+  int barWidth = map(strength, 0, 100, 0, 120);
+  display.fillRect(0, 40, barWidth, 12, SSD1306_WHITE);
+  display.drawRect(0, 40, 120, 12, SSD1306_WHITE);
+
+  display.display();
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  // OLED --------------------------------------------------
+  Wire.begin(7, 6);  // SDA = 7, SCL = 6
+  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+    Serial.println("OLED init failed");
+    for (;;);
+  }
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("Waiting for ESP-NOW...");
+  display.display();
+
+  // ESP-NOW -----------------------------------------------
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("ESP-NOW Init Failed");
+    return;
+  }
+
+  esp_now_register_recv_cb(onReceive);
+
+  Serial.println("Receiver Ready!");
+}
+
+void loop() {
+  // Nothing needed — callback handles updates
+}
